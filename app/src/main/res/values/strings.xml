@@ -2,5 +2,4 @@
     <string name="app_name">SaltDroid</string>
     <string name="channel_name">saldroid_channel</string>
     <string name="channel_description">Saldroid notifications</string>
-    <string name="salt_apk_uri">https://repo.saltproject.io/salt-singlebin/3004-1/salt-3004-1-linux-amd64.tar.gz</string>
 </resources>

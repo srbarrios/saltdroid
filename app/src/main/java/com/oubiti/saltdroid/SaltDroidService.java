@@ -1,7 +1,5 @@
 package com.oubiti.saltdroid;
 
-import static com.oubiti.saltdroid.ZipManager.unzip;
-
 import android.app.Notification;
 import android.app.Service;
 import android.content.Intent;
@@ -19,21 +17,13 @@ import androidx.core.app.NotificationCompat;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
-import java.util.Set;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * this is an example of a service that prompts itself to a foreground service with a persistent
@@ -71,13 +61,12 @@ public class SaltDroidService extends Service {
             }
             synchronized (this) {
                 try {
-                    InputStream in = new URL(getString(R.string.salt_apk_uri)).openStream();
-                    String filename = getDataDir().getPath() + "/salt.tar.gz";
-                    Files.copy(in, Paths.get(filename), StandardCopyOption.REPLACE_EXISTING);
-                    toast(execCmd(new String[] {"/bin/sh", "-c", "tar -xvf " + filename}, getDataDir()));
-                    Set<PosixFilePermission> ownerWritable = PosixFilePermissions.fromString("rwxrwxrwx");
-                    Files.setPosixFilePermissions(Paths.get(getDataDir().getPath() + "/salt"), ownerWritable);
-                    toast(execCmd(new String[] {"/bin/sh", "-c", "salt minion"}, getDataDir()));
+                    getAssets().list("");
+                    InputStream inputStream = getAssets().open("venv-salt-minion.tar.gz");
+                    Path filepath = Paths.get(getDataDir().getPath() + "/venv-salt-minion.tar.gz");
+                    Files.copy(inputStream, filepath, StandardCopyOption.REPLACE_EXISTING);
+                    toast(execCmd(new String[] {"/bin/sh", "-c", "tar -xvf " + filepath}, getDataDir()));
+                    toast(execCmd(new String[] {"/bin/sh", "-c", "ls venv-salt-minion"}, getDataDir()));
                 } catch (IOException e) {
                     Log.e(TAG, e.getMessage());
                 }
