@@ -1,5 +1,7 @@
 package com.oubiti.saltdroid;
 
+import static com.oubiti.saltdroid.ZipManager.unzip;
+
 import android.app.Notification;
 import android.app.Service;
 import android.content.Intent;
@@ -8,13 +10,30 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
-import android.os.Process;
 import android.os.Message;
+import android.os.Process;
+import android.util.Log;
+import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 
-import android.util.Log;
-import android.widget.Toast;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * this is an example of a service that prompts itself to a foreground service with a persistent
@@ -22,7 +41,6 @@ import android.widget.Toast;
  */
 
 public class SaltDroidService extends Service {
-
 
     private Looper mServiceLooper;
     private ServiceHandler mServiceHandler;
@@ -42,30 +60,30 @@ public class SaltDroidService extends Service {
             //promote to foreground and create persistent notification.
             //in Oreo we only have a few seconds to do this or the service is killed.
             Notification notification = getNotification("SaltDroid is running");
-            startForeground(msg.arg1, notification);  //the ID as same as the notification id.  can't be zero.
+            startForeground(msg.arg1, notification);
 
-            Log.d(TAG, "should be foreground now. id number is " + msg.arg1);
-            // Normally we would do some work here, like download a file.
-            // For our example, we just sleep for 5 seconds then display toasts.
-            //setup how many messages
+            Log.d(TAG, "Saltdroid service in foreground. ID: " + msg.arg1);
             String salt_master = "";
 
             Bundle configuration = msg.getData();
             if (configuration != null) {
-                salt_master = configuration.getString("salt_master", "0.0.0.0");  //default is one
+                salt_master = configuration.getString("salt_master", "0.0.0.0");
             }
             synchronized (this) {
                 try {
-                    String config_message = "Connecting salt-minion to " + salt_master;
-                    Log.d("intentServer", config_message);
-                    toast(config_message);
-                    wait(5000);
-                } catch (InterruptedException e) {
-                    Log.e(TAG, e.toString());
+                    InputStream in = new URL(getString(R.string.salt_apk_uri)).openStream();
+                    String filename = getDataDir().getPath() + "/salt.tar.gz";
+                    Files.copy(in, Paths.get(filename), StandardCopyOption.REPLACE_EXISTING);
+                    toast(execCmd(new String[] {"/bin/sh", "-c", "tar -xvf " + filename}, getDataDir()));
+                    Set<PosixFilePermission> ownerWritable = PosixFilePermissions.fromString("rwxrwxrwx");
+                    Files.setPosixFilePermissions(Paths.get(getDataDir().getPath() + "/salt"), ownerWritable);
+                    toast(execCmd(new String[] {"/bin/sh", "-c", "salt minion"}, getDataDir()));
+                } catch (IOException e) {
+                    Log.e(TAG, e.getMessage());
                 }
             }
             String message = "Salt-Minion connected";
-            Log.d("intentServer", message);
+            Log.d(TAG, message);
             toast(message);
             // Stop the service using the startId, so that we don't stop
             // the service in the middle of handling another job
@@ -81,6 +99,7 @@ public class SaltDroidService extends Service {
             @Override
             public void run() {
                 Toast.makeText(SaltDroidService.this, text, Toast.LENGTH_SHORT).show();
+                Log.d(TAG, String.valueOf(text));
             }
         });
     }
@@ -101,8 +120,6 @@ public class SaltDroidService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Toast.makeText(this, "service starting", Toast.LENGTH_SHORT).show();
-
         // For each start request, send a message to start a job and deliver the
         // start ID so we know which request we're stopping when we finish the job
         Message msg = mServiceHandler.obtainMessage();
@@ -127,7 +144,7 @@ public class SaltDroidService extends Service {
 
     @Override
     public void onDestroy() {
-        Toast.makeText(this, "service done", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "SaltDroid service stopped", Toast.LENGTH_SHORT).show();
     }
 
     // build a persistent notification and return it.
@@ -137,8 +154,31 @@ public class SaltDroidService extends Service {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)  //persistent notification!
                 .setChannelId(MainActivity.channel_id)
-                .setContentTitle("Service")   //Title message top row.
+                .setContentTitle("SaltDroid Service")   //Title message top row.
                 .setContentText(message)  //message when looking at the notification, second row
                 .build();  //finally build and return a Notification.
+    }
+
+    public static String execCmd(String[] cmds, File path) {
+        final StringBuilder stringBuilder = new StringBuilder();
+        try {
+            final java.lang.Process process = Runtime.getRuntime().exec(cmds, null, path);
+            final BufferedReader inputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            final BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+            String line;
+            while ((line = inputReader.readLine()) != null) {
+                stringBuilder.append(line);
+            }
+            if ((line = errorReader.readLine()) != null) {
+                stringBuilder.append("\nError message:\n");
+                stringBuilder.append(line);
+                while ((line = errorReader.readLine()) != null) {
+                    stringBuilder.append(line);
+                }
+            }
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+        return stringBuilder.toString();
     }
 }
