@@ -1,5 +1,8 @@
 package com.oubiti.saltdroid;
 
+import static com.oubiti.saltdroid.AssetsManager.copyAssetFolder;
+import static com.oubiti.saltdroid.UnixManager.*;
+
 import android.app.Notification;
 import android.app.Service;
 import android.content.Intent;
@@ -15,15 +18,13 @@ import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 
-import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
+
 
 /**
  * this is an example of a service that prompts itself to a foreground service with a persistent
@@ -34,7 +35,7 @@ public class SaltDroidService extends Service {
 
     private Looper mServiceLooper;
     private ServiceHandler mServiceHandler;
-    private final static String TAG = "SaltDroidService";
+    public final static String TAG = "SaltDroidService";
 
     public SaltDroidService() {
     }
@@ -60,16 +61,20 @@ public class SaltDroidService extends Service {
                 salt_master = configuration.getString("salt_master", "0.0.0.0");
             }
             synchronized (this) {
-                try {
-                    getAssets().list("");
-                    InputStream inputStream = getAssets().open("venv-salt-minion.tar.gz");
-                    Path filepath = Paths.get(getDataDir().getPath() + "/venv-salt-minion.tar.gz");
-                    Files.copy(inputStream, filepath, StandardCopyOption.REPLACE_EXISTING);
-                    toast(execCmd(new String[] {"/bin/sh", "-c", "tar -xvf " + filepath}, getDataDir()));
-                    toast(execCmd(new String[] {"/bin/sh", "-c", "ls venv-salt-minion"}, getDataDir()));
-                } catch (IOException e) {
-                    Log.e(TAG, e.getMessage());
-                }
+                // FIRST TRY WITH A ZIP FILE, FAILED UNZIPPING SYMLINKS
+                //InputStream inputStream = getAssets().open("venv-salt-minion.zip");
+                //Path filepath = Paths.get(getFilesDir().getPath() + "/venv-salt-minion.zip");
+                //Files.copy(inputStream, filepath, StandardCopyOption.REPLACE_EXISTING);
+                //execCommand(new String[] {"/bin/sh", "-c", "unzip " + filepath, "-d venv-salt-minion"}, getFilesDir());
+
+                // SECOND TRY COPYING ALL FILES FROM ASSETS FOLDER, FAILED RUNNING PROGRAMS
+                // THE FILES IN ASSETS CONTAINS THE UNCOMPRESSED FILES FROM a venv-salt-minion.rpm
+                copyAssetFolder(getAssets(), "usr", getFilesDir().getPath() );
+                copyAssetFolder(getAssets(), "etc", getFilesDir().getPath() );
+                toast(execCommandVerbose(
+                        new String[] {"/bin/sh", "-c", "/bin/sh usr/lib/venv-salt-minion/bin/python.original --version"},
+                        new String[]{"PATH=usr/bin:usr/sbin:usr/lib/venv-salt-minion:usr/lib/venv-salt-minion/bin"},
+                        getFilesDir()));
             }
             String message = "Salt-Minion connected";
             Log.d(TAG, message);
@@ -148,26 +153,4 @@ public class SaltDroidService extends Service {
                 .build();  //finally build and return a Notification.
     }
 
-    public static String execCmd(String[] cmds, File path) {
-        final StringBuilder stringBuilder = new StringBuilder();
-        try {
-            final java.lang.Process process = Runtime.getRuntime().exec(cmds, null, path);
-            final BufferedReader inputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            final BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-            String line;
-            while ((line = inputReader.readLine()) != null) {
-                stringBuilder.append(line);
-            }
-            if ((line = errorReader.readLine()) != null) {
-                stringBuilder.append("\nError message:\n");
-                stringBuilder.append(line);
-                while ((line = errorReader.readLine()) != null) {
-                    stringBuilder.append(line);
-                }
-            }
-        } catch (Exception e) {
-            return e.getMessage();
-        }
-        return stringBuilder.toString();
-    }
 }
